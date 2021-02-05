@@ -1,6 +1,7 @@
 '''
-This script reads in an unstrcutured mesh and prints the node coordinates and element connectivity.
+This script reads in an unstructured or polydata mesh and prints the node coordinates and element connectivity.
 '''
+from os import path
 import os
 import sys
 import vtk
@@ -10,12 +11,19 @@ if __name__ == '__main__':
     ## Read mesh.
     #
     file_name = sys.argv[1]
-    reader = vtk.vtkXMLUnstructuredGridReader()
+    filename, file_extension = path.splitext(file_name)
+    reader = None
+    if file_extension == ".vtp":
+      reader = vtk.vtkXMLPolyDataReader()
+    elif file_extension == ".vtu":
+      reader = vtk.vtkXMLUnstructuredGridReader()
+
     reader.SetFileName(file_name)
     reader.Update()
     mesh = reader.GetOutput()
 
     ## Print node coordinates.
+    print("========== Nodes ==========")
     num_points = mesh.GetNumberOfPoints()
     points = mesh.GetPoints()
     node_ids = mesh.GetPointData().GetArray('GlobalNodeID')
@@ -34,11 +42,11 @@ if __name__ == '__main__':
             min_point_id = node_id
 
     ## Print element connectivity.
+    print(" ")
+    print("========== Elements ==========")
     num_cells = mesh.GetNumberOfCells()
     element_ids = mesh.GetCellData().GetArray('GlobalElementID')
-    print(" ")
     print("Number of elements: {0:d}".format(num_cells))
-    cells = mesh.GetCells()
     min_cell_id = 1e6
     for i in range(num_cells):
         elem_id = element_ids.GetValue(i)

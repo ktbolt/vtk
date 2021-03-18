@@ -15,6 +15,7 @@
 
 #include <string>
 //#include <bits/stdc++.h> 
+#include <algorithm>
 
 #include <vtkActor.h>
 #include <vtkCellData.h>

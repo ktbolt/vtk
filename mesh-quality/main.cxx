@@ -14,7 +14,7 @@
 //
 
 #include <string>
-#include <bits/stdc++.h> 
+//#include <bits/stdc++.h> 
 
 #include <vtkActor.h>
 #include <vtkCellData.h>
@@ -31,6 +31,7 @@
 #include <vtkInteractorStyleTrackballCamera.h>
 #include <vtkMeshQuality.h>
 #include <vtkNamedColors.h>
+#include "vtkObjectFactory.h"
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper.h>
 #include <vtkProperty.h>
@@ -294,7 +295,8 @@ int main(int argc, char* argv[])
 
   // Select cells with volume <= 'lower'.
   //
-  double lower = 1.0e-6;
+  double lower = 1.0e-8;
+  //double lower = 1.0e-6;
   vtkSmartPointer<vtkThreshold> selectCells = vtkSmartPointer<vtkThreshold>::New();
   selectCells->ThresholdByLower(lower);
   selectCells->SetInputArrayToProcess( 0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_CELLS, 
@@ -314,7 +316,7 @@ int main(int argc, char* argv[])
   selectActor->GetProperty()->SetColor(0.0, 1.0, 0.0);
   selectActor->GetProperty()->SetEdgeColor(0.0, 1.0, 0.0); 
   selectActor->GetProperty()->EdgeVisibilityOn();
-  selectActor->GetProperty()->SetRepresentationToWireframe();
+  //selectActor->GetProperty()->SetRepresentationToWireframe();
 
   // Visualize entire mesh.
   //
@@ -327,14 +329,14 @@ int main(int argc, char* argv[])
 
   // Create graphics geometry.
   vtkSmartPointer<vtkDataSetMapper> mapper = vtkSmartPointer<vtkDataSetMapper>::New();
-  mapper->SetInputData(shrinkFilter->GetOutput());
-  //mapper->SetInputData(mesh);
+  //mapper->SetInputData(shrinkFilter->GetOutput());
+  mapper->SetInputData(mesh);
   //mapper->SetInputConnection(triangleFilter->GetOutputPort());
   vtkSmartPointer<vtkActor> actor = vtkSmartPointer<vtkActor>::New();
   mapper->ScalarVisibilityOff();
   actor->SetMapper(mapper);
   actor->GetProperty()->SetColor(1.0, 0.0, 0.0);
-  //actor->GetProperty()->SetRepresentationToWireframe();
+  actor->GetProperty()->SetRepresentationToWireframe();
   //actor->GetProperty()->EdgeVisibilityOn();
   actor->GetProperty()->BackfaceCullingOn();
 
@@ -342,6 +344,8 @@ int main(int argc, char* argv[])
   //renderer->AddActor(selectActor);
   renderer->AddActor(actor);
   renderer->SetBackground(1.0, 1.0, 1.0); 
+
+  renderer->AddActor(selectActor);
 
   vtkSmartPointer<vtkRenderWindow> renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
   renderWindow->AddRenderer(renderer);
@@ -362,8 +366,8 @@ int main(int argc, char* argv[])
   style->SetDefaultRenderer(renderer);
   //style->Data = reader->GetOutput();
   //style->Data = triangleFilter->GetOutput();
-  //style->Data = mesh;
-  style->Data = shrinkFilter->GetOutput();
+  style->Data = mesh;
+  //style->Data = shrinkFilter->GetOutput();
 
   renderWindowInteractor->SetInteractorStyle(style);
 

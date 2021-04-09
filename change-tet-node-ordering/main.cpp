@@ -1,6 +1,7 @@
 
 // This is an exmaple of changing the node ordering for tetrahedral elements in an unstructured mesh. 
 //
+// I was also using this to test svPre elem conn reordering.
 //
 
 #include <string>
@@ -29,6 +30,48 @@
 #include "vtkUnsignedCharArray.h"
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLUnstructuredGridReader.h>
+#include <vtkXMLUnstructuredGridWriter.h>
+
+vtkUnstructuredGrid* 
+check_element_volumes(vtkUnstructuredGrid* mesh, int* numNegVolCells)
+{
+  // Check element volumes.
+  //
+  auto cellTypes = mesh->GetCellTypesArray();
+  auto cell = vtkGenericCell::New();
+  auto qualityFilter = vtkSmartPointer<vtkMeshQuality>::New();
+  qualityFilter->SetInputData(mesh);
+  qualityFilter->SetTetQualityMeasureToVolume();
+  qualityFilter->Update();
+
+  auto qualityMesh = qualityFilter->GetOutput();
+  auto qualityArray = vtkDoubleArray::SafeDownCast(qualityMesh->GetCellData()->GetArray("Quality"));
+  *numNegVolCells = 0;
+  int numZeroVolCells = 0;
+  int numZeroVolWedge = 0;
+  //std::cout << "[check_element_volumes] Size: " << qualityArray->GetNumberOfTuples() << std::endl;
+
+  for(vtkIdType i = 0; i < qualityArray->GetNumberOfTuples(); i++) {
+    mesh->GetCell(i, cell);
+    auto dim = cell->GetCellDimension();
+    if (dim != 3) {
+      continue;
+    }
+    double val = qualityArray->GetValue(i);
+    if (val < 0.0) {
+      *numNegVolCells += 1;
+    } else if (val == 0.0) {
+      numZeroVolCells += 1;
+      if (cellTypes->GetValue(i) == VTK_WEDGE) {
+        numZeroVolWedge += 1;
+      }
+    }
+  }
+
+  vtkUnstructuredGrid* newMesh = vtkUnstructuredGrid::New();
+  newMesh->ShallowCopy(qualityFilter->GetOutput());
+  return newMesh;
+}
 
 int main(int argc, char* argv[])
 {
@@ -111,83 +154,93 @@ int main(int argc, char* argv[])
 
   std::cout.clear();
   std::cout << std::endl;
-  std::cout << "Number of cells " << numCells << std::endl;
-  std::cout << "Number of hex cells " << numHex << std::endl;
-  std::cout << "Number of tet cells " << numTet << std::endl;
-  std::cout << "Number of wedge cells " << numWedge << std::endl;
-  std::cout << "Number of tri cells " << numTri << std::endl;
-  std::cout << "Number of quad cells " << numQuad << std::endl;
+  std::cout << "Mesh elements: " << numCells << std::endl;
+  std::cout << "  Number of cells " << numCells << std::endl;
+  std::cout << "  Number of hex cells " << numHex << std::endl;
+  std::cout << "  Number of tet cells " << numTet << std::endl;
+  std::cout << "  Number of wedge cells " << numWedge << std::endl;
+  std::cout << "  Number of tri cells " << numTri << std::endl;
+  std::cout << "  Number of quad cells " << numQuad << std::endl;
+
+  int numNegVolCells;
+  auto qualityMesh = check_element_volumes(mesh, &numNegVolCells);
+  std::cout << std::endl;
+  std::cout << "Check original mesh volumes: " << std::endl;
+  std::cout << "  Number of cells with negative volume " << numNegVolCells << std::endl;
 
   // Change node ordering for tets.
   //
+  //bool changeOrdering = false;
+  bool changeOrdering = true;
   int numOrderChanged = 0;
-  vtkIdType ids[6];
-  vtkIdType loc = 0;
-  for (vtkIdType cellId = 0; cellId < numCells; cellId++) {
-    mesh->GetCell(cellId, cell);
-    auto dim = cell->GetCellDimension();
-    auto numPts = cell->GetNumberOfPoints();
-    int i = 0;
-    for (vtkIdType pointInd = 0; pointInd < numPts; ++pointInd) {
-      auto id = cell->PointIds->GetId(pointInd);
-      ids[i++] = id;
+  int n0, n1, n2, n3;
+  int j0, j1, j2, j3;
+  int tmpj;
+
+  if (changeOrdering) { 
+    std::cout << std::endl;
+    std::cout << "Change ordering ... " << std::endl;
+    vtkIdType ids[6];
+    vtkIdType loc = 0;
+    for (vtkIdType cellId = 0; cellId < numCells; cellId++) {
+      mesh->GetCell(cellId, cell);
+      auto dim = cell->GetCellDimension();
+      auto numPts = cell->GetNumberOfPoints();
+      int i = 0;
+      for (vtkIdType pointInd = 0; pointInd < numPts; ++pointInd) {
+        auto id = cell->PointIds->GetId(pointInd);
+        ids[i++] = id;
+      }
+      if ((dim == 3) && (numPts == 4)) {
+        auto id0 = ids[0];
+        //ids[0] = ids[1];
+        //ids[1] = id0;
+
+        // Mimic svPre check_node_order.
+        //
+        n0 = ids[0]; n1 = ids[1]; n2 = ids[2]; n3 = ids[3];
+
+        // Initial default change.
+        j0 = n0; j1 = n2; j2 = n1; j3 = n3;
+
+        // Change again when reading in wrong-order mesh.
+        tmpj = j0; j0 = j2; j2 = j1; j1 = tmpj;
+        ids[0] = j0; ids[1] = j1; ids[2] = j2; ids[3] = j3;
+
+        cells->ReplaceCell(loc, numPts, ids);
+        numOrderChanged += 1;
+      }
+      loc += numPts + 1;
     }
-    if ((dim == 3) && (numPts == 4)) {
-      auto id0 = ids[0];
-      ids[0] = ids[1];
-      ids[1] = id0;
-      cells->ReplaceCell(loc, numPts, ids);
-      numOrderChanged += 1;
-    }
-    loc += numPts + 1;
   }
 
   std::cout << std::endl;
   std::cout << "Number of cells with changed order " << numOrderChanged << std::endl;
   mesh->Modified();
 
-  // Check element volumes.
-  //
-  double lower = 0.0;
-  vtkSmartPointer<vtkMeshQuality> qualityFilter = vtkSmartPointer<vtkMeshQuality>::New();
-  qualityFilter->SetInputData(mesh);
-  qualityFilter->SetTetQualityMeasureToVolume();
-  qualityFilter->Update();
+  // Write out modified mesh.
+  std::string out_file_name = file_name + ".reorder";
+  std::cout << std::endl;
+  std::cout << "Write reorded mesh to: " << out_file_name << std::endl;
+  vtkSmartPointer<vtkXMLUnstructuredGridWriter> writer = vtkSmartPointer<vtkXMLUnstructuredGridWriter>::New();
+  writer->SetFileName(out_file_name.c_str());
+  writer->SetInputData(mesh);
+  writer->Write();
 
-  vtkDataSet* qualityMesh = qualityFilter->GetOutput();
-  vtkSmartPointer<vtkDoubleArray> qualityArray = 
-      vtkDoubleArray::SafeDownCast(qualityMesh->GetCellData()->GetArray("Quality"));
-  int numNegVolCells = 0;
-  int numZeroVolCells = 0;
-  int numZeroVolWedge = 0;
-
-  for(vtkIdType i = 0; i < qualityArray->GetNumberOfTuples(); i++) {
-    mesh->GetCell(i, cell);
-    auto dim = cell->GetCellDimension();
-    if (dim != 3) { 
-      continue;
-    }
-    double val = qualityArray->GetValue(i);
-    if (val < 0.0) {
-      numNegVolCells += 1;
-    } else if (val == 0.0) {
-      numZeroVolCells += 1;
-      if (cellTypes->GetValue(i) == VTK_WEDGE) {
-        numZeroVolWedge += 1;
-      }
-    }
-  }
-
-  std::cout << "Number of cells with negative volume " << numNegVolCells << std::endl;
-  std::cout << "Number of cells with zero volume " << numZeroVolCells << std::endl;
-  std::cout << "Number of wedges with zero volume " << numZeroVolWedge << std::endl;
+  // Check volumes of modified mesh.
+  qualityMesh = check_element_volumes(mesh, &numNegVolCells);
+  std::cout << std::endl;
+  std::cout << "Check modified mesh volumes: " << std::endl;
+  std::cout << "  Number of cells with negative volume " << numNegVolCells << std::endl;
 
   // Select bad cells.
   //
-  vtkSmartPointer<vtkThreshold> selectCells = vtkSmartPointer<vtkThreshold>::New();
+  std::cout << std::endl;
+  std::cout << "Select bad cells ..."  << std::endl;
+  double lower = 0.0;
+  auto selectCells = vtkSmartPointer<vtkThreshold>::New();
   selectCells->ThresholdByLower(lower);
-  selectCells->SetInputArrayToProcess( 0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_CELLS, 
-      vtkDataSetAttributes::SCALARS );
+  selectCells->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_CELLS, vtkDataSetAttributes::SCALARS);
   selectCells->SetInputData(qualityMesh);
   selectCells->Update();
   auto filteredMesh = selectCells->GetOutput();
